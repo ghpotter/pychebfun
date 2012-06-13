@@ -8,6 +8,7 @@ Chebfun module
 
 .. moduleauthor :: Chris Swierczewski <cswiercz@gmail.com>
 .. moduleauthor :: Olivier Verdier <olivier.verdier@gmail.com>
+.. moduleauthor :: Gregory Potter <ghpotter@gmail.com>
 
 
 """
@@ -20,7 +21,7 @@ import sys
 from functools import wraps
 
 from scipy.interpolate import BarycentricInterpolator as Bary
-from scipy.fftpack     import fft            # implement DCT routine later
+from scipy.fftpack     import dct            # implement DCT routine later
 
 def cast_scalar(method):
     """
@@ -47,14 +48,17 @@ class Chebfun(object):
         Raised when dichotomy does not converge.
         """
 
-    def __init__(self, f=None, N=0,):
+    def __init__(self, f=None, N=0, chebcoeff=np.array(0),):
         """
 Create a Chebyshev polynomial approximation of the function $f$ on the interval :math:`[-1,1]`.
 
 :param callable f: Python, Numpy, or Sage function
 :param int N: (default = None)  specify number of interpolating points
+:param np.array chebcoeff: (default = np.array(0)) specify the coefficients of a Chebfun
         """
-        
+
+        self.N = N
+
         if self.record:
             self.intermediate = []
             self.bnds = []
@@ -84,42 +88,62 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
             self.x = f.x
             self.f = f.f
 
-        if not N: # N is not provided
-            # Find out the right number of coefficients to keep
-            for k in xrange(2,self.max_nb_dichotomy):
-                N = pow(2,k)
+        Chebflag = False
+        try:
+            if chebcoeff.any():
+                Chebflag = True
+        except:
+            print "Chebyshev coefficients should be in an array.\n"
+            raise
 
-                coeffs = self.chebpolyfit(f,N, sample=True)
+        if Chebflag:
+            N = len(chebcoeff)
+            self.ai = chebcoeff
 
-                # 3) Check for negligible coefficients
-                #    If within bound: get negligible coeffs and bread
-                bnd = 128*emach*abs(np.max(coeffs))
+            chebcoeff[0] *= 2.
+            chebcoeff[-1] *= 2.
+            chebcoeff *= N
+            self.f = dct(chebcoeff, 1)/(2*N)
+            self.x = self.interpolation_points(N-1)
+            self.p = Bary(self.x, self.f)
+
+        else:
+            if not N: # N is not provided
+                # Find out the right number of coefficients to keep
+                for k in xrange(2,self.max_nb_dichotomy):
+                    N = pow(2,k)
+
+                    coeffs = self.chebpolyfit(f,N, sample=True)
+
+                    # 3) Check for negligible coefficients
+                    #    If within bound: get negligible coeffs and bread
+                    bnd = 128*emach*abs(np.max(coeffs))
+                    if self.record:
+                        self.bnds.append(bnd)
+                        self.intermediate.append(coeffs)
+
+                    last = abs(coeffs[-2:])
+                    if np.all(last <= bnd):
+                        break
+                else:
+                    raise self.NoConvergence(last, bnd)
+
+
+                # End of convergence loop: construct polynomial
+                [inds]  = np.where(abs(coeffs) >= bnd)
+                N = inds[-1]
+
                 if self.record:
                     self.bnds.append(bnd)
                     self.intermediate.append(coeffs)
-
-                last = abs(coeffs[-2:])
-                if np.all(last <= bnd):
-                    break
             else:
-                raise self.NoConvergence(last, bnd)
+                nextpow2 = int(np.log2(N))+1
+                coeffs = self.chebpolyfit(f,pow(2,nextpow2), sample=True)
 
-
-            # End of convergence loop: construct polynomial
-            [inds]  = np.where(abs(coeffs) >= bnd)
-            N = inds[-1]
-
-            if self.record:
-                self.bnds.append(bnd)
-                self.intermediate.append(coeffs)
-        else:
-            nextpow2 = int(np.log2(N))+1
-            coeffs = self.chebpolyfit(f,pow(2,nextpow2), sample=True)
-
-        self.ai = coeffs[:N+1]
-        self.x  = self.interpolation_points(N)
-        self.f  = f(self.x)
-        self.p  = Bary(self.x, self.f)
+            self.ai = coeffs[:N+1]
+            self.x  = self.interpolation_points(N)
+            self.f  = f(self.x)
+            self.p  = Bary(self.x, self.f)
             
 
 
@@ -142,18 +166,16 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
         x = self.interpolation_points(N)
         return f(x)
 
-    def fft(self, data):
+    def dct(self, data):
         """
-        Compute DCT using FFT
-          NOTE: We should write a fast cosine transform
-          routine instead. This is a factor of two slower.
+        Compute DCT
         """
         N = len(data)//2
-        fftdata     = np.real(fft(data)[:N+1])
-        fftdata     /= N
-        fftdata[0]  /= 2.
-        fftdata[-1] /= 2.
-        return fftdata
+        dctdata     = dct(data[:N+1], 1)
+        dctdata     /= N
+        dctdata[0]  /= 2.
+        dctdata[-1] /= 2.
+        return dctdata
 
     def chebpolyfit(self, f, N, sample=True):
         """
@@ -164,7 +186,7 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
         else: # f is a vector
             sampled = f
         evened = self.even_data(sampled)
-        coeffs = self.fft(evened)
+        coeffs = self.dct(evened)
         return coeffs
 
     def __repr__(self):
@@ -316,13 +338,13 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
         # If a_i and b_i are the kth Chebyshev polynomial expansion coefficient
         # Then b_{i-1} = b_{i+1} + 2ia_i; b_N = b_{N+1} = 0; b_0 = b_2/2 + a_1
 
-        # DOESNT WORK YET :( POSSIBLY DUE TO __init__?
-        bi = np.array([0])
-        for i in np.arange(self.N,1,-1):
-            bi = np.append(bi,bi[0] + 2*self.ai[i])
-        bi = np.append(bi,bi[0]/2 + self.ai[i])
+        bi = np.array([2.*(self.N-1)*self.ai[-2], 2.*self.N*self.ai[-1]])
 
-        return Chebfun(self, ai=bi)
+        for i in np.arange(self.N-2, 1, -1):
+            bi = np.append(bi[1] + 2.*i*self.ai[i], bi)
+        bi = np.append(bi[1]/2. + self.ai[0], bi)
+
+        return Chebfun(self, chebcoeff=bi)
 
     def roots(self):
         """

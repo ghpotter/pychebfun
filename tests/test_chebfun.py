@@ -137,7 +137,7 @@ class Test_Chebfun(unittest.TestCase):
         i = p.integral()
         self.assertAlmostEqual(i,2/3)
 
-    @unittest.expectedFailure
+    #@unittest.expectedFailure
     def test_differentiate(self):
         d = self.p.differentiate()
 
