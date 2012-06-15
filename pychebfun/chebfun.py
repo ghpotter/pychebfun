@@ -48,7 +48,7 @@ class Chebfun(object):
         Raised when dichotomy does not converge.
         """
 
-    def __init__(self, f=None, N=0, chebcoeff=np.array(0),):
+    def __init__(self, f=None, N=0, chebcoeff=None,):
         """
 Create a Chebyshev polynomial approximation of the function $f$ on the interval :math:`[-1,1]`.
 
@@ -56,8 +56,6 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
 :param int N: (default = None)  specify number of interpolating points
 :param np.array chebcoeff: (default = np.array(0)) specify the coefficients of a Chebfun
         """
-
-        self.N = N
 
         if self.record:
             self.intermediate = []
@@ -88,26 +86,15 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
             self.x = f.x
             self.f = f.f
 
-        Chebflag = False
-        try:
-            if chebcoeff.any():
-                Chebflag = True
-        except:
-            print "Chebyshev coefficients should be in an array.\n"
-            raise
+        if chebcoeff is not None: # if the coefficients of a Chebfun are given
 
-        if Chebflag:
             N = len(chebcoeff)
             self.ai = chebcoeff
-
-            chebcoeff[0] *= 2.
-            chebcoeff[-1] *= 2.
-            chebcoeff *= N
-            self.f = dct(chebcoeff, 1)/(2*N)
+            self.f = self.idct(chebcoeff)
             self.x = self.interpolation_points(N-1)
             self.p = Bary(self.x, self.f)
 
-        else:
+        else: # if the coefficients of a Chebfun are not given
             if not N: # N is not provided
                 # Find out the right number of coefficients to keep
                 for k in xrange(2,self.max_nb_dichotomy):
@@ -191,6 +178,20 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
 
     def __repr__(self):
         return "<Chebfun({0})>".format(len(self))
+
+    def idct(self, chebcoeff):
+        """
+        Compute the inverse DCT
+        """
+        N = len(chebcoeff)
+
+        data = 2.*chebcoeff
+        data[0] *= 2
+        data[-1] *= 2
+        data *= N
+
+        idctdata = dct(data,1)/(4*N)
+        return idctdata
 
 
     #
