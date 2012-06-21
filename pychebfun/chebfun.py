@@ -71,6 +71,7 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
         else:
             vals = np.array(f)
             N = len(vals)-1
+            self.N = N+1
             if N:
                 self.ai = self.chebpolyfit(vals,N, sample=False)
                 self.x = self.interpolation_points(N)
@@ -85,13 +86,14 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
             self.ai = f.ai.copy()
             self.x = f.x
             self.f = f.f
+            self.N = f.N
 
         if chebcoeff is not None: # if the coefficients of a Chebfun are given
 
-            N = len(chebcoeff)
+            self.N = len(chebcoeff)
             self.ai = chebcoeff
             self.f = self.idct(chebcoeff)
-            self.x = self.interpolation_points(N-1)
+            self.x = self.interpolation_points(self.N-1)
             self.p = Bary(self.x, self.f)
 
         else: # if the coefficients of a Chebfun are not given
@@ -127,6 +129,7 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
                 nextpow2 = int(np.log2(N))+1
                 coeffs = self.chebpolyfit(f,pow(2,nextpow2), sample=True)
 
+            self.N  = N
             self.ai = coeffs[:N+1]
             self.x  = self.interpolation_points(N)
             self.f  = f(self.x)
@@ -338,12 +341,13 @@ Create a Chebyshev polynomial approximation of the function $f$ on the interval 
 
         # If a_i and b_i are the kth Chebyshev polynomial expansion coefficient
         # Then b_{i-1} = b_{i+1} + 2ia_i; b_N = b_{N+1} = 0; b_0 = b_2/2 + a_1
+        N = self.N-1
 
-        bi = np.array([2.*(self.N-1)*self.ai[-2], 2.*self.N*self.ai[-1]])
+        bi = np.array([2.*(N-1)*self.ai[-2], 2.*N*self.ai[-1]])
 
-        for i in np.arange(self.N-2, 1, -1):
+        for i in np.arange(N-2, 1, -1):
             bi = np.append(bi[1] + 2.*i*self.ai[i], bi)
-        bi = np.append(bi[1]/2. + self.ai[0], bi)
+        bi = np.append(bi[1]/2. + self.ai[1], bi)
 
         return Chebfun(self, chebcoeff=bi)
 
